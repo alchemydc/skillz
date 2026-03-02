@@ -16,7 +16,7 @@ airports currently in MVFR/IFR/LIFR from METAR flight category.
 Flags:
   --hours <N>                Look-back window for SIGMET/AIRMET scan (default: 4)
   --source <MODE>            Weather area source: gairmet, sigmet, both (default: both)
-  --forecast-hour <N>        G-AIRMET forecast hour to use (default: 0)
+  --forecast-hour <N>        G-AIRMET forecast hour filter; -1 = auto/all (default: -1)
   --search-bbox <BOX>        Search extent lat0,lon0,lat1,lon1 (default: 18,-170,72,-52)
                              Default includes CONUS, AK, and HI while excluding Europe/Asia.
   --countries <LIST>         Comma-separated ISO country codes for airports (default: US)
@@ -32,7 +32,7 @@ Examples:
   find_imc.sh
   find_imc.sh --max-areas 8 --airports-per-area 6
   find_imc.sh --search-bbox 18,-170,72,-52 --hours 6
-  find_imc.sh --source gairmet --forecast-hour 0
+  find_imc.sh --source gairmet --forecast-hour 3
   find_imc.sh --countries US,CA --json
   find_imc.sh --debug --debug-airport KDEN
 EOF
@@ -49,7 +49,7 @@ require_bin() {
 
 hours=4
 source_mode="both"
-forecast_hour=0
+forecast_hour=-1
 search_bbox="$DEFAULT_SEARCH_BBOX"
 max_areas=5
 airports_per_area=5
@@ -116,7 +116,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if ! [[ "$hours" =~ ^[0-9]+$ && "$forecast_hour" =~ ^[0-9]+$ && "$max_areas" =~ ^[0-9]+$ && "$airports_per_area" =~ ^[0-9]+$ && "$metar_hours" =~ ^[0-9]+$ ]]; then
+if ! [[ "$hours" =~ ^[0-9]+$ && "$forecast_hour" =~ ^-?[0-9]+$ && "$max_areas" =~ ^[0-9]+$ && "$airports_per_area" =~ ^[0-9]+$ && "$metar_hours" =~ ^[0-9]+$ ]]; then
   echo "Error: --hours, --forecast-hour, --max-areas, --airports-per-area, and --metar-hours must be integers." >&2
   exit 1
 fi
@@ -186,7 +186,7 @@ areas_json="$(jq -n \
   def gairmet_areas:
     [ $gairmet[]
       | select((.hazard // "") == "IFR")
-      | select((.forecastHour // -1) == $forecast_hour)
+      | select($forecast_hour < 0 or ((.forecastHour // -1) == $forecast_hour))
       | select((.coords | type) == "array" and (.coords | length) > 0)
       | {
           area_id: "GAIRMET-\(.tag // "NA")-FH\(.forecastHour // 0)",
@@ -552,7 +552,11 @@ echo "findIMC weather scan"
 echo "Search bbox: ${search_bbox}"
 echo "Countries: ${countries_csv}"
 echo "Source mode: ${source_mode}"
-echo "G-AIRMET forecast hour: ${forecast_hour}"
+if [[ "$forecast_hour" -lt 0 ]]; then
+  echo "G-AIRMET forecast hour: auto (all)"
+else
+  echo "G-AIRMET forecast hour: ${forecast_hour}"
+fi
 echo "Debug mode: ${debug_mode}"
 if [[ -n "$debug_airport" ]]; then
   echo "Debug airport filter: ${debug_airport}"
