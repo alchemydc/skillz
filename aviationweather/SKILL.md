@@ -47,6 +47,11 @@ Active SIGMETs/AIRMETs:
 {baseDir}/scripts/aviation_weather.sh sigmet
 ```
 
+Station metadata in an area (lat0,lon0,lat1,lon1):
+```bash
+{baseDir}/scripts/aviation_weather.sh station --bbox 21,-161,72,-65
+```
+
 ## Subcommands
 
 | Subcommand | Purpose |
@@ -64,7 +69,7 @@ Active SIGMETs/AIRMETs:
 | `--format <FMT>` | all | `json` | Output: `json`, `raw`, `decoded` |
 | `--hours <N>` | metar, taf, pirep, sigmet | 2 | Look-back window in hours |
 | `--taf` | metar | off | Include TAF with METAR query |
-| `--bbox <lat0,lon0,lat1,lon1>` | metar, taf, pirep | — | Area search by bounding box |
+| `--bbox <lat0,lon0,lat1,lon1>` | metar, taf, pirep, station | — | Area search by bounding box |
 | `--raw` | all | — | Alias for `--format raw` (standard METAR/TAF text) |
 
 ## Direct API Access

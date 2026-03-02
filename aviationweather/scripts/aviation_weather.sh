@@ -16,7 +16,7 @@ Subcommands:
   taf <IDS>         Terminal forecasts
   pirep             Pilot reports (requires --bbox)
   sigmet            Active SIGMETs/AIRMETs
-  station <IDS>     Station metadata
+  station <IDS>     Station metadata (or use --bbox)
 
 Flags:
   --format <FMT>    Output format: json (default), raw, decoded
@@ -117,8 +117,13 @@ done
 # Validate required args
 case "$subcommand" in
   metar|taf|station)
-    if [[ -z "$ids" ]]; then
+    # station can query by IDs and/or bbox
+    if [[ "$subcommand" != "station" && -z "$ids" ]]; then
       echo "Error: $subcommand requires station IDs" >&2
+      usage
+    fi
+    if [[ "$subcommand" == "station" && -z "$ids" && -z "$bbox" ]]; then
+      echo "Error: station requires station IDs or --bbox" >&2
       usage
     fi
     ;;
@@ -162,7 +167,10 @@ case "$subcommand" in
     ;;
   station)
     endpoint="stationinfo"
-    params="ids=${ids}&format=${format}"
+    params="format=${format}"
+    if [[ -n "$ids" ]]; then
+      params="ids=${ids}&${params}"
+    fi
     if [[ -n "$bbox" ]]; then
       params="${params}&bbox=${bbox}"
     fi
@@ -234,12 +242,18 @@ case "$subcommand" in
       ""'
     ;;
   station)
-    echo "$response" | jq -r '.[] |
-      "📍 \(.icaoId) — \(.site)",
-      "    IATA: \(.iataId // "N/A")  FAA: \(.faaId // "N/A")  WMO: \(.wmoId // "N/A")",
-      "    Location: \(.lat),\(.lon)  Elevation: \(.elev) ft",
-      "    State: \(.state // "N/A")  Country: \(.country)",
-      "    Products: \(.siteType | join(", "))",
-      ""'
+    echo "$response" | jq -r '
+      [ .[] | select((.icaoId != null) or (.faaId != null)) ] as $stations |
+      if ($stations | length) == 0 then
+        "No aviation-identified stations found for the query"
+      else
+        $stations[] |
+        "📍 \(.icaoId // .faaId // .id // "N/A") — \(.site // "Unknown Site")",
+        "    IATA: \(.iataId // "N/A")  FAA: \(.faaId // "N/A")  WMO: \(.wmoId // "N/A")",
+        "    Location: \(.lat),\(.lon)  Elevation: \(.elev // "N/A") ft",
+        "    State: \(.state // "N/A")  Country: \(.country // "N/A")",
+        "    Products: \(if (.siteType and (.siteType | length > 0)) then (.siteType | join(", ")) else "N/A" end)",
+        ""
+      end'
     ;;
 esac
