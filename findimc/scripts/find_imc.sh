@@ -15,6 +15,8 @@ airports currently in MVFR/IFR/LIFR from METAR flight category.
 
 Flags:
   --hours <N>                Look-back window for SIGMET/AIRMET scan (default: 4)
+  --source <MODE>            Weather area source: gairmet, sigmet, both (default: both)
+  --forecast-hour <N>        G-AIRMET forecast hour to use (default: 0)
   --search-bbox <BOX>        Search extent lat0,lon0,lat1,lon1 (default: 18,-170,72,-52)
                              Default includes CONUS, AK, and HI while excluding Europe/Asia.
   --countries <LIST>         Comma-separated ISO country codes for airports (default: US)
@@ -30,6 +32,7 @@ Examples:
   find_imc.sh
   find_imc.sh --max-areas 8 --airports-per-area 6
   find_imc.sh --search-bbox 18,-170,72,-52 --hours 6
+  find_imc.sh --source gairmet --forecast-hour 0
   find_imc.sh --countries US,CA --json
   find_imc.sh --debug --debug-airport KDEN
 EOF
@@ -45,6 +48,8 @@ require_bin() {
 }
 
 hours=4
+source_mode="both"
+forecast_hour=0
 search_bbox="$DEFAULT_SEARCH_BBOX"
 max_areas=5
 airports_per_area=5
@@ -62,6 +67,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --search-bbox)
       search_bbox="$2"
+      shift 2
+      ;;
+    --source)
+      source_mode="$(echo "$2" | tr '[:upper:]' '[:lower:]')"
+      shift 2
+      ;;
+    --forecast-hour)
+      forecast_hour="$2"
       shift 2
       ;;
     --max-areas)
@@ -103,8 +116,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if ! [[ "$hours" =~ ^[0-9]+$ && "$max_areas" =~ ^[0-9]+$ && "$airports_per_area" =~ ^[0-9]+$ && "$metar_hours" =~ ^[0-9]+$ ]]; then
-  echo "Error: --hours, --max-areas, --airports-per-area, and --metar-hours must be integers." >&2
+if ! [[ "$hours" =~ ^[0-9]+$ && "$forecast_hour" =~ ^[0-9]+$ && "$max_areas" =~ ^[0-9]+$ && "$airports_per_area" =~ ^[0-9]+$ && "$metar_hours" =~ ^[0-9]+$ ]]; then
+  echo "Error: --hours, --forecast-hour, --max-areas, --airports-per-area, and --metar-hours must be integers." >&2
+  exit 1
+fi
+
+if [[ "$source_mode" != "gairmet" && "$source_mode" != "sigmet" && "$source_mode" != "both" ]]; then
+  echo "Error: --source must be one of: gairmet, sigmet, both." >&2
   exit 1
 fi
 
@@ -133,28 +151,24 @@ if [[ -n "$debug_airport" && ! "$debug_airport" =~ ^[A-Z0-9]{3,5}$ ]]; then
   exit 1
 fi
 
-sigmet_response="$(curl -sS -A "$USER_AGENT" "${BASE_URL}/airsigmet?format=json&hours=${hours}")"
+gairmet_response='[]'
+sigmet_response='[]'
 
-if [[ -z "$sigmet_response" || "$sigmet_response" == "[]" || "$sigmet_response" == "null" ]]; then
-  if [[ "$json_output" == "true" ]]; then
-    jq -n --arg bbox "$search_bbox" --arg countries "$countries_csv" '{
-      summary: {
-        search_bbox: $bbox,
-        countries: ($countries | split(",")),
-        significant_weather_areas_analyzed: 0,
-        candidate_airports_queried: 0,
-        airports_imc_count: 0
-      },
-      areas: [],
-      message: "No active SIGMET/AIRMET weather areas found in the requested time window."
-    }'
-  else
-    echo "No active SIGMET/AIRMET weather areas found in the requested time window."
-  fi
-  exit 0
+if [[ "$source_mode" == "gairmet" || "$source_mode" == "both" ]]; then
+  gairmet_response="$(curl -sS -A "$USER_AGENT" "${BASE_URL}/gairmet?format=json&hazard=IFR" || echo '[]')"
 fi
 
-areas_json="$(echo "$sigmet_response" | jq --arg bbox "$search_bbox" --argjson max_areas "$max_areas" '
+if [[ "$source_mode" == "sigmet" || "$source_mode" == "both" ]]; then
+  sigmet_response="$(curl -sS -A "$USER_AGENT" "${BASE_URL}/airsigmet?format=json&hours=${hours}" || echo '[]')"
+fi
+
+areas_json="$(jq -n \
+  --arg bbox "$search_bbox" \
+  --arg source "$source_mode" \
+  --argjson max_areas "$max_areas" \
+  --argjson forecast_hour "$forecast_hour" \
+  --argjson gairmet "$gairmet_response" \
+  --argjson sigmet "$sigmet_response" '
   def parse_bbox($s):
     ($s | split(",") | map(tonumber)) as $b
     | { min_lat: $b[0], min_lon: $b[1], max_lat: $b[2], max_lon: $b[3] };
@@ -163,29 +177,64 @@ areas_json="$(echo "$sigmet_response" | jq --arg bbox "$search_bbox" --argjson m
     ($a.min_lat <= $b.max_lat) and
     ($a.max_lon >= $b.min_lon) and
     ($a.min_lon <= $b.max_lon);
-  def weather_signal:
+  def sigmet_weather_signal:
     ((.hazard // "" | ascii_upcase) | test("CONVECTIVE|THUNDER|TS|PRECIP|RAIN|SNOW|ICE|FZRA|SEV")) or
     ((.rawAirSigmet // "" | ascii_upcase) | test("\\+TS|TSRA|TS\\b|\\+RA|\\-RA|SHRA|SNOW|FZRA|CONVECTIVE"));
-
-  parse_bbox($bbox) as $search
-  | [ .[]
-      | . as $row
+  def airmet_ifr_signal:
+    ((.hazard // "" | ascii_upcase) | test("IFR|MT_OBSC")) or
+    ((.rawAirSigmet // "" | ascii_upcase) | test("CIG|VIS|IFR|OBSC|BR|FG"));
+  def gairmet_areas:
+    [ $gairmet[]
+      | select((.hazard // "") == "IFR")
+      | select((.forecastHour // -1) == $forecast_hour)
       | select((.coords | type) == "array" and (.coords | length) > 0)
       | {
+          area_id: "GAIRMET-\(.tag // "NA")-FH\(.forecastHour // 0)",
+          source: "gairmet",
+          hazard: (.hazard // "IFR"),
+          severity: 20,
+          valid_from: (.issueTime // 0),
+          valid_to: (.expireTime // 0),
+          min_lat: ([.coords[].lat | tonumber] | min),
+          min_lon: ([.coords[].lon | tonumber] | min),
+          max_lat: ([.coords[].lat | tonumber] | max),
+          max_lon: ([.coords[].lon | tonumber] | max),
+          headline: "G-AIRMET IFR \(.tag // "NA") FH\(.forecastHour // 0)",
+          due_to: (.due_to // ""),
+          product: (.product // "SIERRA")
+        }
+    ];
+  def sigmet_areas:
+    [ $sigmet[]
+      | . as $row
+      | select((.coords | type) == "array" and (.coords | length) > 0)
+      | select(
+          ((.airSigmetType // "") == "SIGMET" and sigmet_weather_signal) or
+          ((.airSigmetType // "") == "AIRMET" and airmet_ifr_signal)
+        )
+      | {
           area_id: "\($row.airSigmetType // "SIGMET")-\($row.seriesId // "NA")",
+          source: ((.airSigmetType // "SIGMET") | ascii_downcase),
           hazard: ($row.hazard // "UNKNOWN"),
-          severity: ($row.severity // 0),
+          severity: (if ($row.airSigmetType // "") == "AIRMET" then 12 else ($row.severity // 5) end),
           valid_from: ($row.validTimeFrom // 0),
           valid_to: ($row.validTimeTo // 0),
           min_lat: ([.coords[].lat] | min),
           min_lon: ([.coords[].lon] | min),
           max_lat: ([.coords[].lat] | max),
           max_lon: ([.coords[].lon] | max),
-          headline: (($row.rawAirSigmet // "") | split("\n") | .[0:3] | join(" "))
+          headline: (($row.rawAirSigmet // "") | split("\n") | .[0:3] | join(" ")),
+          due_to: "",
+          product: null
         }
-      | select(weather_signal)
-      | select(intersects(.; $search))
-    ]
+    ];
+
+  parse_bbox($bbox) as $search
+  | ((if $source == "gairmet" then gairmet_areas
+      elif $source == "sigmet" then sigmet_areas
+      else (gairmet_areas + sigmet_areas)
+      end)
+    | map(select(intersects(.; $search))))
   | sort_by(.severity, .valid_to)
   | reverse
   | .[0:$max_areas]
@@ -194,19 +243,21 @@ areas_json="$(echo "$sigmet_response" | jq --arg bbox "$search_bbox" --argjson m
 area_count="$(echo "$areas_json" | jq 'length')"
 if [[ "$area_count" -eq 0 ]]; then
   if [[ "$json_output" == "true" ]]; then
-    jq -n --arg bbox "$search_bbox" --arg countries "$countries_csv" '{
+    jq -n --arg bbox "$search_bbox" --arg countries "$countries_csv" --arg source "$source_mode" --argjson fh "$forecast_hour" '{
       summary: {
         search_bbox: $bbox,
         countries: ($countries | split(",")),
+        source: $source,
+        forecast_hour: $fh,
         significant_weather_areas_analyzed: 0,
         candidate_airports_queried: 0,
         airports_imc_count: 0
       },
       areas: [],
-      message: "No significant storm/precip areas intersected the search bbox."
+      message: "No weather areas matched the selected source and filters in the search bbox."
     }'
   else
-    echo "No significant storm/precip areas intersected search bbox ${search_bbox}."
+    echo "No weather areas matched source '${source_mode}' (forecast hour ${forecast_hour}) in search bbox ${search_bbox}."
   fi
   exit 0
 fi
@@ -257,20 +308,25 @@ done
 
 if [[ "${#all_airports[@]}" -eq 0 ]]; then
   if [[ "$json_output" == "true" ]]; then
-    jq -n --arg bbox "$search_bbox" --arg countries "$countries_csv" --argjson areas "$areas_json" '{
+    jq -n --arg bbox "$search_bbox" --arg countries "$countries_csv" --arg source "$source_mode" --argjson fh "$forecast_hour" --argjson areas "$areas_json" '{
       summary: {
         search_bbox: $bbox,
         countries: ($countries | split(",")),
+        source: $source,
+        forecast_hour: $fh,
         significant_weather_areas_analyzed: ($areas | length),
         candidate_airports_queried: 0,
         airports_imc_count: 0
       },
       areas: ($areas | map({
         area_id,
+        source,
         hazard,
+        due_to,
+        product,
         severity,
         area_bbox: "\(.min_lat),\(.min_lon),\(.max_lat),\(.max_lon)",
-        bulletin: .headline,
+        synopsis: .headline,
         checked_airports: []
       })),
       message: "No airports found inside significant weather-area bounding boxes for selected countries."
@@ -451,10 +507,13 @@ if [[ "$json_output" == "true" ]]; then
 
     area_json="$(echo "$area" | jq --argjson checked "$checked" '{
       area_id,
+      source,
       hazard,
+      due_to,
+      product,
       severity,
       area_bbox: "\(.min_lat),\(.min_lon),\(.max_lat),\(.max_lon)",
-      bulletin: .headline,
+      synopsis: .headline,
       checked_airports: $checked
     }')"
 
@@ -464,6 +523,8 @@ if [[ "$json_output" == "true" ]]; then
   jq -n \
     --arg bbox "$search_bbox" \
     --arg countries "$countries_csv" \
+      --arg source "$source_mode" \
+      --argjson forecast_hour "$forecast_hour" \
     --argjson debug "$( [[ "$debug_mode" == "true" ]] && echo true || echo false )" \
     --arg debug_airport "$debug_airport" \
     --argjson area_count "$area_count" \
@@ -474,6 +535,8 @@ if [[ "$json_output" == "true" ]]; then
       summary: {
         search_bbox: $bbox,
         countries: ($countries | split(",")),
+        source: $source,
+        forecast_hour: $forecast_hour,
         debug: $debug,
         debug_airport: (if $debug_airport == "" then null else $debug_airport end),
         significant_weather_areas_analyzed: $area_count,
@@ -488,6 +551,8 @@ fi
 echo "findIMC weather scan"
 echo "Search bbox: ${search_bbox}"
 echo "Countries: ${countries_csv}"
+echo "Source mode: ${source_mode}"
+echo "G-AIRMET forecast hour: ${forecast_hour}"
 echo "Debug mode: ${debug_mode}"
 if [[ -n "$debug_airport" ]]; then
   echo "Debug airport filter: ${debug_airport}"
@@ -502,15 +567,24 @@ debug_airport_found=false
 for idx in "${!area_rows[@]}"; do
   area="${area_rows[$idx]}"
   area_id="$(echo "$area" | jq -r '.area_id')"
+  area_source="$(echo "$area" | jq -r '.source // "unknown"')"
   hazard="$(echo "$area" | jq -r '.hazard')"
+  due_to="$(echo "$area" | jq -r '.due_to // ""')"
+  product="$(echo "$area" | jq -r '.product // ""')"
   severity="$(echo "$area" | jq -r '.severity')"
   bbox="$(echo "$area" | jq -r '"\(.min_lat),\(.min_lon),\(.max_lat),\(.max_lon)"')"
   headline="$(echo "$area" | jq -r '.headline')"
 
   echo "Area $((idx + 1)): ${area_id}"
-  echo "  Hazard: ${hazard}  Severity: ${severity}"
+  echo "  Source: ${area_source}  Hazard: ${hazard}  Severity: ${severity}"
+  if [[ -n "$product" ]]; then
+    echo "  Product: ${product}"
+  fi
+  if [[ -n "$due_to" ]]; then
+    echo "  Due To: ${due_to}"
+  fi
   echo "  Area bbox: ${bbox}"
-  echo "  Bulletin: ${headline}"
+  echo "  Synopsis: ${headline}"
 
   csv="${area_airports_csv[$idx]:-}"
   if [[ -z "$csv" ]]; then
