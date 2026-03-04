@@ -47,6 +47,34 @@ require_bin() {
   fi
 }
 
+validate_json_response() {
+  local response="$1"
+  local api_name="$2"
+  
+  if [[ -z "$response" ]]; then
+    echo "Error: ${api_name} API returned empty response." >&2
+    return 1
+  fi
+  
+  if ! echo "$response" | jq empty 2>/dev/null; then
+    echo "Error: ${api_name} API returned invalid JSON." >&2
+    if [[ "$debug_mode" == "true" || "${FINDIMC_VERBOSE:-false}" == "true" ]]; then
+      echo "  Response preview (first 500 chars): ${response:0:500}" >&2
+      echo "  Full response: $response" >&2
+    fi
+    return 1
+  fi
+  
+  debug_output "${api_name} response is valid JSON"
+  return 0
+}
+
+debug_output() {
+  if [[ "$debug_mode" == "true" || "${FINDIMC_VERBOSE:-false}" == "true" ]]; then
+    echo "DEBUG: $*" >&2
+  fi
+}
+
 hours=4
 source_mode="both"
 forecast_hour=-1
@@ -156,10 +184,20 @@ sigmet_response='[]'
 
 if [[ "$source_mode" == "gairmet" || "$source_mode" == "both" ]]; then
   gairmet_response="$(curl -sS -A "$USER_AGENT" "${BASE_URL}/gairmet?format=json&hazard=IFR" || echo '[]')"
+  debug_output "G-AIRMET API response received (${#gairmet_response} chars)"
+  if ! validate_json_response "$gairmet_response" "G-AIRMET"; then
+    echo "Continuing with empty G-AIRMET response..." >&2
+    gairmet_response='[]'
+  fi
 fi
 
 if [[ "$source_mode" == "sigmet" || "$source_mode" == "both" ]]; then
   sigmet_response="$(curl -sS -A "$USER_AGENT" "${BASE_URL}/airsigmet?format=json&hours=${hours}" || echo '[]')"
+  debug_output "SIGMET API response received (${#sigmet_response} chars)"
+  if ! validate_json_response "$sigmet_response" "SIGMET"; then
+    echo "Continuing with empty SIGMET response..." >&2
+    sigmet_response='[]'
+  fi
 fi
 
 areas_json="$(jq -n \
@@ -276,6 +314,14 @@ for idx in "${!area_rows[@]}"; do
   pool_limit=$((airports_per_area * METAR_BACKFILL_POOL_MULTIPLIER))
 
   stations_response="$(curl -sS -A "$USER_AGENT" "${BASE_URL}/stationinfo?format=json&bbox=${area_bbox}")"
+  debug_output "StationInfo API response for area $((idx + 1)) received (${#stations_response} chars)"
+  
+  if ! validate_json_response "$stations_response" "StationInfo (area $((idx + 1)))"; then
+    debug_output "Skipping invalid StationInfo response for area $((idx + 1))"
+    area_candidate_pool_csv[$idx]=""
+    area_airports_csv[$idx]=""
+    continue
+  fi
 
   mapfile -t area_pool_airports < <(echo "$stations_response" | jq -r --argjson countries "$countries_json" '
     [ .[]
@@ -338,13 +384,41 @@ if [[ "${#all_airports[@]}" -eq 0 ]]; then
 fi
 
 metar_ids_csv="$(IFS=,; echo "${all_airports[*]}")"
-metar_json="$(curl -sS -A "$USER_AGENT" "${BASE_URL}/metar?ids=${metar_ids_csv}&format=json&hours=${metar_hours}" || true)"
+debug_output "METAR IDs to query: count: ${#all_airports[@]}"
 
 declare -A metar_raw_by_airport=()
 declare -A metar_cat_by_airport=()
 declare -A imc_cat_by_airport=()
 
-if [[ -n "$metar_json" && "$metar_json" != "[]" && "$metar_json" != "null" ]]; then
+# Batch METAR queries in chunks of 350 to stay under API's 400-station limit
+metar_batch_size=350
+for ((i=0; i < ${#all_airports[@]}; i+=metar_batch_size)); do
+  batch_end=$((i + metar_batch_size))
+  batch_codes=("${all_airports[@]:i:metar_batch_size}")
+  batch_ids_csv="$(IFS=,; echo "${batch_codes[*]}")"
+  
+  debug_output "Querying METAR batch $((i/metar_batch_size + 1)): ${#batch_codes[@]} airports"
+  metar_json="$(curl -sS -A "$USER_AGENT" "${BASE_URL}/metar?ids=${batch_ids_csv}&format=json&hours=${metar_hours}" || true)"
+  debug_output "METAR batch response: ${#metar_json} chars"
+  
+  if [[ -n "$metar_json" ]]; then
+    if ! validate_json_response "$metar_json" "METAR (batch $((i/metar_batch_size + 1)))"; then
+      debug_output "Invalid METAR response for batch, skipping"
+      continue
+    fi
+  fi
+
+  if [[ -z "$metar_json" || "$metar_json" == "[]" || "$metar_json" == "null" ]]; then
+    continue
+  fi
+  
+  # Check if response is an error object instead of an array
+  if echo "$metar_json" | jq -e '.status == "error"' >/dev/null 2>&1; then
+    error_msg="$(echo "$metar_json" | jq -r '.error // "unknown error"')"
+    debug_output "METAR API returned error: $error_msg"
+    continue
+  fi
+  
   mapfile -t metar_rows < <(echo "$metar_json" | jq -c '.[]')
 
   for row in "${metar_rows[@]}"; do
@@ -427,7 +501,7 @@ if [[ -n "$metar_json" && "$metar_json" != "[]" && "$metar_json" != "null" ]]; t
       imc_cat_by_airport[$airport]="$category"
     fi
   done
-fi
+done
 
 # Build final per-area checked airports with METAR-first backfill.
 for idx in "${!area_rows[@]}"; do
