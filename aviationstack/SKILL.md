@@ -20,42 +20,35 @@ metadata:
 
 # AviationStack
 
-Real-time flight tracking and aviation data via AviationStack API.
+> [!WARNING]
+> **Free Plan Limitations**: This skill uses the AviationStack free tier, which supports only basic flight lookups. Filtering, historical dates, airports, airlines, and route queries are not available without a paid plan upgrade.
+
+Real-time flight tracking via AviationStack API (free tier).
 
 ## Quick Start
 
-Look up a specific flight (IATA code):
+Look up a specific flight by IATA code:
 ```bash
 {baseDir}/scripts/flight_status.sh flight AA100
-```
-
-Look up flights by route (departure/arrival airports):
-```bash
-{baseDir}/scripts/flight_status.sh route JFK LAX
-```
-
-Look up airport information:
-```bash
-{baseDir}/scripts/flight_status.sh airport DEN
 ```
 
 ## Usage
 
 ### Subcommands
 
-- `flight <IATA>` — Get status for a specific flight (e.g., AA100, UA235).
-- `route <DEP> <ARR>` — List flights between two airports by IATA code.
-- `airport <IATA>` — Look up details for an airport.
-- `airline <IATA>` — Look up details for an airline (IATA code or Name).
-- `active` — List currently airborne flights (use with `--dep` or `--arr` to filter).
+- `flight <IATA>` — Get status for a specific flight (e.g., AA100, UA235). **Free tier only.**
 
 ### Flags
 
-- `--status <STATUS>` — Filter by: `scheduled`, `active`, `landed`, `cancelled`, `diverted`.
-- `--date <YYYY-MM-DD>` — Historical or future flight date.
-- `--limit <N>` — Limit results (default 5, max 100).
-- `--dep <IATA>` / `--arr <IATA>` — Filter departures or arrivals for the `active` subcommand.
 - `--raw` — Output raw JSON response from the API.
+
+> [!CAUTION]
+> The following features require a **paid AviationStack plan** and will be rejected:
+> - `route` subcommand (requires Basic plan)
+> - `airport` subcommand (requires Basic plan)
+> - `airline` subcommand (requires Basic plan)
+> - `active` subcommand (requires Basic plan)
+> - `--status`, `--date`, `--limit`, `--dep`, `--arr` flags (require Basic plan or higher)
 
 ## Direct API Access
 
@@ -65,4 +58,4 @@ curl -s "https://api.aviationstack.com/v1/flights?access_key=$AVIATIONSTACK_API_
 ```
 
 > [!NOTE]
-> For more details on parameters and response data, see [api_reference.md](references/api_reference.md).
+> For more details on the AviationStack API and plan tiers, see https://aviationstack.com/documentation.

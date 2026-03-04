@@ -14,12 +14,10 @@ Subcommands:
   active              List currently airborne flights
 
 Flags:
-  --status <STATUS>   Filter by status (scheduled, active, landed, cancelled, diverted)
-  --date <YYYY-MM-DD> Historical or future flight date
-  --limit <N>         Result limit (default 5)
-  --dep <IATA>        Filter by departure airport (for 'active' subcommand)
-  --arr <IATA>        Filter by arrival airport (for 'active' subcommand)
   --raw               Output raw JSON
+
+Note: Free plan supports basic flight lookup only.
+      Advanced filters require an upgraded AviationStack plan.
 EOF
   exit 2
 }
@@ -42,7 +40,6 @@ shift
 
 endpoint="flights"
 params=""
-limit=5
 raw=0
 
 # Parse Subcommand Args
@@ -52,25 +49,9 @@ case "$cmd" in
     params="&flight_iata=$1"
     shift
     ;;
-  route)
-    if [[ $# -lt 2 ]]; then usage; fi
-    params="&dep_iata=$1&arr_iata=$2"
-    shift 2
-    ;;
-  airport)
-    if [[ $# -lt 1 ]]; then usage; fi
-    endpoint="airports"
-    params="&search=$1"
-    shift
-    ;;
-  airline)
-    if [[ $# -lt 1 ]]; then usage; fi
-    endpoint="airlines"
-    params="&search=$1"
-    shift
-    ;;
-  active)
-    params="&flight_status=active"
+  route|airport|airline|active)
+    echo "Error: '$cmd' subcommand requires a paid AviationStack plan. This skill uses the free tier which only supports 'flight' lookups." >&2
+    exit 1
     ;;
   -h|--help)
     usage
@@ -84,29 +65,13 @@ esac
 # Parse Flags
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --status)
-      params="${params}&flight_status=$2"
-      shift 2
-      ;;
-    --date)
-      params="${params}&flight_date=$2"
-      shift 2
-      ;;
-    --limit)
-      limit="$2"
-      shift 2
-      ;;
-    --dep)
-      params="${params}&dep_iata=$2"
-      shift 2
-      ;;
-    --arr)
-      params="${params}&arr_iata=$2"
-      shift 2
-      ;;
     --raw)
       raw=1
       shift
+      ;;
+    --status|--date|--limit|--dep|--arr)
+      echo "Error: '$1' requires a paid AviationStack plan. This skill uses the free tier which only supports basic flight lookup." >&2
+      exit 1
       ;;
     *)
       echo "Unknown flag: $1" >&2
@@ -116,7 +81,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 BASE_URL="https://api.aviationstack.com/v1"
-url="${BASE_URL}/${endpoint}?access_key=${AVIATIONSTACK_API_KEY}${params}&limit=${limit}"
+url="${BASE_URL}/${endpoint}?access_key=${AVIATIONSTACK_API_KEY}${params}"
 
 response=$(curl -sS "$url")
 
