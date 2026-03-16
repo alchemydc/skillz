@@ -32,12 +32,12 @@ metadata:
 
 Look up a specific flight by IATA or ICAO code:
 ```bash
-{baseDir}/scripts/flight_status.sh flight AA100
+/home/dc/.openclaw/workspace/skills/flightstatus/scripts/flight_status.sh flight AA100
 ```
 
 Check airport info and delays:
 ```bash
-{baseDir}/scripts/flight_status.sh airport JFK
+/home/dc/.openclaw/workspace/skills/flightstatus/scripts/flight_status.sh airport JFK
 ```
 
 ## Usage
@@ -79,7 +79,7 @@ If FlightAware is unavailable or errors, the script automatically falls back to 
 
 ### Track a specific flight
 ```bash
-{baseDir}/scripts/flight_status.sh flight AA100
+/home/dc/.openclaw/workspace/skills/flightstatus/scripts/flight_status.sh flight AA100
 ```
 
 Output:
@@ -97,32 +97,32 @@ Output:
 
 ### Check airport delays
 ```bash
-{baseDir}/scripts/flight_status.sh airport KJFK
+/home/dc/.openclaw/workspace/skills/flightstatus/scripts/flight_status.sh airport KJFK
 ```
 
 ### View departures from an airport
 ```bash
-{baseDir}/scripts/flight_status.sh departures ORD
+/home/dc/.openclaw/workspace/skills/flightstatus/scripts/flight_status.sh departures ORD
 ```
 
 ### View arrivals at an airport
 ```bash
-{baseDir}/scripts/flight_status.sh arrivals LAX
+/home/dc/.openclaw/workspace/skills/flightstatus/scripts/flight_status.sh arrivals LAX
 ```
 
 ### Look up flights on a route
 ```bash
-{baseDir}/scripts/flight_status.sh route JFK LAX
+/home/dc/.openclaw/workspace/skills/flightstatus/scripts/flight_status.sh route JFK LAX
 ```
 
 ### Get raw JSON (for custom processing)
 ```bash
-{baseDir}/scripts/flight_status.sh flight UA900 --raw | jq '.flights[0].status'
+/home/dc/.openclaw/workspace/skills/flightstatus/scripts/flight_status.sh flight UA900 --raw | jq '.flights[0].status'
 ```
 
 ### Force AviationStack fallback
 ```bash
-{baseDir}/scripts/flight_status.sh flight AA100 --fallback
+/home/dc/.openclaw/workspace/skills/flightstatus/scripts/flight_status.sh flight AA100 --fallback
 ```
 
 ## Direct API Access

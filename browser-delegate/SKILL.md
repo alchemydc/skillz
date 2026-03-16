@@ -36,12 +36,15 @@ Do not use this skill for simple static pages. Prefer `web_fetch` or `web_search
 
 Use `sessions_spawn` from the main agent side, not from inside the browser agent.
 
+**Important:** Use `runtime: "subagent"` — the browser agent is defined locally in `agents.list`, not as an ACP harness.
+
 Recommended shape:
 
 ```json
 {
+  "runtime": "subagent",
   "agentId": "browser",
-  "task": "Stand by for browser work. Wait for a follow-up message with the concrete task and return only the requested results.",
+  "task": "<structured browser task — include objective, URLs, required actions, return format, and constraints>",
   "label": "browser-delegate",
   "sandbox": "require",
   "cleanup": "keep",
@@ -52,15 +55,16 @@ Recommended shape:
 
 Notes:
 
-- `sandbox: "require"` ensures the child stays inside the browser sandbox.
+- `runtime: "subagent"` — required; the browser agent is a local agent, not an ACP harness.
+- `sandbox: "require"` ensures the child stays inside the Docker sandbox.
 - `cleanup: "keep"` makes follow-up inspection easier if the first handoff fails.
-- `sessions_spawn` is non-blocking. Capture the spawned session key or session id from the tool result, announce, or subagent status tooling.
+- `mode: "run"` — one-shot execution. The browser agent completes the task and returns.
+- Put the full task directly in `task` — no need for a separate `sessions_send` follow-up for simple jobs.
+- For multi-step workflows, spawn first with a standing task, then use `sessions_send` for each step.
 
-## Send Contract
+## Task Template
 
-Use `sessions_send` with a bounded timeout so the browser agent can finish the task and return a final answer.
-
-Recommended task template:
+Use this structured template for the `task` field in `sessions_spawn` (or in `sessions_send` for multi-step flows):
 
 ```text
 You are the dedicated browser agent.
@@ -88,15 +92,19 @@ Constraints:
 - If login, consent, CAPTCHA, or payment is required, stop and say so clearly
 ```
 
-Recommended `sessions_send` shape:
+## Multi-Step Send Contract
+
+For multi-step workflows where you need to send follow-up instructions to an already-running browser session, use `sessions_send`:
 
 ```json
 {
   "sessionKey": "<spawned-browser-session>",
-  "message": "<structured browser task>",
+  "message": "<next step instructions>",
   "timeoutSeconds": 180
 }
 ```
+
+For simple one-shot tasks (most cases), put the full structured task in `sessions_spawn.task` directly — no `sessions_send` needed.
 
 ## Response Policy
 
@@ -111,7 +119,7 @@ The user should experience a normal answer from the main agent, not a handoff tr
 
 ## Failure Handling
 
-- If `sessions_spawn` fails because `browser` is unavailable, say that sandboxed browser delegation is currently unavailable and fall back only if a static fetch can answer safely.
+- If `sessions_spawn` fails (e.g., `agentId is not allowed`, Docker unavailable, or agent not found), say that sandboxed browser delegation is currently unavailable and fall back only if a static fetch can answer safely.
 - If `sessions_send` times out, check subagent status or retry with a narrower task.
 - If the browser agent reports login/CAPTCHA/paywall blockers, surface that directly and ask for the minimum needed input.
 - If the task turns out to be static after all, stop using the browser agent and answer from `web_fetch`/`web_search` instead.

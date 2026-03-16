@@ -23,23 +23,25 @@ Identify IFR-focused weather areas and return airports currently reporting IMC-l
 
 Run with default North America scope (includes CONUS, AK, HI):
 ```bash
-bash {baseDir}/scripts/find_imc.sh
+/home/dc/.openclaw/workspace/skills/findimc/scripts/find_imc.sh
 ```
 
 Increase scan depth:
 ```bash
-bash {baseDir}/scripts/find_imc.sh --hours 6 --max-areas 8 --airports-per-area 6
+/home/dc/.openclaw/workspace/skills/findimc/scripts/find_imc.sh --hours 6 --max-areas 8 --airports-per-area 6
 ```
 
 Use IFR-focused G-AIRMET source:
 ```bash
-bash {baseDir}/scripts/find_imc.sh --source gairmet --forecast-hour 0
+/home/dc/.openclaw/workspace/skills/findimc/scripts/find_imc.sh --source gairmet --forecast-hour 0
 ```
 
 Set explicit search extent:
 ```bash
-bash {baseDir}/scripts/find_imc.sh --search-bbox 18,-170,72,-52
+/home/dc/.openclaw/workspace/skills/findimc/scripts/find_imc.sh --search-bbox 18,-170,72,-52
 ```
+
+> ⚠️ Always use the full absolute path above — never `~` or `{baseDir}`. The gateway exec allowlist matches against absolute paths; tilde is not expanded at execution time and will cause "No such file or directory".
 
 ## How It Works
 

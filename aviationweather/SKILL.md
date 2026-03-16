@@ -24,23 +24,25 @@ Aviation weather observations and forecasts from aviationweather.gov for GA flig
 
 Current METAR at Denver:
 ```bash
-{baseDir}/scripts/aviation_weather.sh metar KDEN
+/home/dc/.openclaw/workspace/skills/aviationweather/scripts/aviation_weather.sh metar KDEN
 ```
 
 TAF forecast at multiple airports:
 ```bash
-{baseDir}/scripts/aviation_weather.sh taf KDEN,KCOS,KASE
+/home/dc/.openclaw/workspace/skills/aviationweather/scripts/aviation_weather.sh taf KDEN,KCOS,KASE
 ```
 
 METAR + TAF together (route briefing):
 ```bash
-{baseDir}/scripts/aviation_weather.sh metar KDEN,KBJC,KCOS --taf
+/home/dc/.openclaw/workspace/skills/aviationweather/scripts/aviation_weather.sh metar KDEN,KBJC,KCOS --taf
 ```
 
 PIREPs in a bounding box (lat0,lon0,lat1,lon1):
 ```bash
-{baseDir}/scripts/aviation_weather.sh pirep --bbox 38,-106,41,-103
+/home/dc/.openclaw/workspace/skills/aviationweather/scripts/aviation_weather.sh pirep --bbox 38,-106,41,-103
 ```
+
+> ⚠️ Always use the full absolute path above — never `~` or `{baseDir}`. The gateway exec allowlist matches against absolute paths; tilde is not expanded at execution time.
 
 Active SIGMETs/AIRMETs:
 ```bash
