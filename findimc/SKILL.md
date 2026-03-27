@@ -41,7 +41,10 @@ Set explicit search extent:
 /home/dc/.openclaw/workspace/skills/findimc/scripts/find_imc.sh --search-bbox 18,-170,72,-52
 ```
 
-> ⚠️ Always use the full absolute path above — never `~` or `{baseDir}`. The gateway exec allowlist matches against absolute paths; tilde is not expanded at execution time and will cause "No such file or directory".
+> ⚠️ **Exec policy constraints** — The gateway runs in `security=allowlist` mode. To avoid approval prompts:
+> - Always use the full absolute path shown above — never `~` or `{baseDir}`.
+> - **Never** append shell redirections (`2>/dev/null`, `>/tmp/out`), pipes (`| jq`), or chaining (`&& echo done`). Redirections and chaining cause the allowlist to reject the command.
+> - Pass all options as flags to the script itself. Stderr is already handled internally.
 
 ## How It Works
 

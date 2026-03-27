@@ -40,6 +40,11 @@ Check airport info and delays:
 /home/dc/.openclaw/workspace/skills/flightstatus/scripts/flight_status.sh airport JFK
 ```
 
+> ⚠️ **Exec policy constraints** — The gateway runs in `security=allowlist` mode. To avoid approval prompts:
+> - Always use the full absolute path shown above — never `~` or `{baseDir}`.
+> - **Never** append shell redirections (`2>/dev/null`, `>/tmp/out`), pipes (`| jq`), or chaining (`&& echo done`). Redirections and chaining cause the allowlist to reject the command.
+> - Pass all options as flags to the script itself. Stderr is already handled internally.
+
 ## Usage
 
 ### Subcommands

@@ -42,16 +42,19 @@ PIREPs in a bounding box (lat0,lon0,lat1,lon1):
 /home/dc/.openclaw/workspace/skills/aviationweather/scripts/aviation_weather.sh pirep --bbox 38,-106,41,-103
 ```
 
-> ⚠️ Always use the full absolute path above — never `~` or `{baseDir}`. The gateway exec allowlist matches against absolute paths; tilde is not expanded at execution time.
+> ⚠️ **Exec policy constraints** — The gateway runs in `security=allowlist` mode. To avoid approval prompts:
+> - Always use the full absolute path shown above — never `~` or `{baseDir}`.
+> - **Never** append shell redirections (`2>/dev/null`, `>/tmp/out`), pipes (`| jq`), or chaining (`&& echo done`). Redirections and chaining cause the allowlist to reject the command.
+> - Pass all options as flags to the script itself. Stderr is already handled internally.
 
 Active SIGMETs/AIRMETs:
 ```bash
-{baseDir}/scripts/aviation_weather.sh sigmet
+/home/dc/.openclaw/workspace/skills/aviationweather/scripts/aviation_weather.sh sigmet
 ```
 
 Station metadata in an area (lat0,lon0,lat1,lon1):
 ```bash
-{baseDir}/scripts/aviation_weather.sh station --bbox 21,-161,72,-65
+/home/dc/.openclaw/workspace/skills/aviationweather/scripts/aviation_weather.sh station --bbox 21,-161,72,-65
 ```
 
 ## Subcommands

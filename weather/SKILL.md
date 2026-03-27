@@ -8,6 +8,10 @@ metadata: { "openclaw": { "emoji": "🌤️", "requires": { "bins": ["curl"] } }
 
 Get current weather conditions and forecasts.
 
+> ⚠️ **Exec policy constraints** — The gateway runs in `security=allowlist` mode. To avoid approval prompts:
+> - **Never** append shell redirections (`2>/dev/null`, `>/tmp/out`), pipes (`| jq`), or chaining (`&& echo done`). Redirections and chaining cause the allowlist to reject the command.
+> - Run `curl` as a single, bare command with flags only.
+
 ## When to Use
 
 ✅ **USE this skill when:**
