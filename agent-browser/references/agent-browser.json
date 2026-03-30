@@ -1,0 +1,7 @@
+{
+  "contentBoundaries": true,
+  "maxOutput": 50000,
+  "confirmActions": "eval,download",
+  "allowedDomains": [],
+  "idleTimeoutMs": 120000
+}

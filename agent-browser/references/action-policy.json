@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "comment": "Conservative default policy. Copy to ~/.agent-browser/action-policy.json and set AGENT_BROWSER_ACTION_POLICY to enable.",
+  "rules": [
+    {
+      "action": "navigate",
+      "allow": true
+    },
+    {
+      "action": "snapshot",
+      "allow": true
+    },
+    {
+      "action": "screenshot",
+      "allow": true
+    },
+    {
+      "action": "pdf",
+      "allow": true
+    },
+    {
+      "action": "click",
+      "allow": true
+    },
+    {
+      "action": "fill",
+      "allow": true
+    },
+    {
+      "action": "type",
+      "allow": true
+    },
+    {
+      "action": "select",
+      "allow": true
+    },
+    {
+      "action": "eval",
+      "allow": false,
+      "comment": "Blocks arbitrary JS execution. Set allow:true only if required."
+    },
+    {
+      "action": "download",
+      "allow": false,
+      "comment": "Blocks file downloads. Set allow:true only if required."
+    }
+  ]
+}
