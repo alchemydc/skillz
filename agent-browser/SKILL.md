@@ -32,6 +32,14 @@ metadata:
 Use the `agent-browser` CLI to control a headless Chrome browser directly from the main agent via `exec`. No subagent or Docker sandbox required.
 
 > **New deployment?** See `references/setup.md` for installation and openclaw configuration instructions.
+>
+> **Exec policy constraints**
+> The gateway runs in `security=allowlist` mode. To avoid exec whitelist failures:
+> - Run `agent-browser` as a single bare command per exec call. Do not chain steps with `&&`, `||`, `;`, pipes, or shell wrappers.
+> - Do not append shell redirections such as `2>&1`, `2>/dev/null`, `>/tmp/out`, or heredocs.
+> - Do not wrap `agent-browser` in `sh -c`, `bash -lc`, `echo ... | agent-browser batch`, or similar shell constructs.
+> - Prefer multiple simple exec calls over one complex shell command: `open`, then `wait`, then `snapshot`, then `click`, and so on.
+> - Keep examples and real runs in direct argv form, for example `agent-browser open https://example.com`.
 
 ## When to Use
 
@@ -51,6 +59,8 @@ Use the `agent-browser` CLI to control a headless Chrome browser directly from t
 ## Core Workflow
 
 The key pattern is **snapshot → ref → interact**. Refs from a snapshot are deterministic and fast; always re-snapshot after navigation or significant page changes.
+
+Under allowlist mode, each of these should be a separate exec invocation. Do not combine them into a single chained shell command.
 
 ```bash
 # 1. Navigate to the page
@@ -121,16 +131,26 @@ agent-browser get title                          # Page title
 
 ## Batch Execution
 
-Use batch mode to avoid per-command startup overhead for multi-step flows:
+`agent-browser batch` is valid, but only when invoked directly. Do not feed it via shell pipelines like `echo '...' | agent-browser batch --json` under allowlist mode.
+
+If you need batch mode, write the JSON to a trusted file first or prefer separate direct `agent-browser` commands.
+
+Example direct invocation shape:
 
 ```bash
-echo '[
+agent-browser batch --json --file /path/to/steps.json
+```
+
+Example batch payload:
+
+```bash
+[
   ["open", "https://example.com"],
   ["wait", "--load", "networkidle"],
   ["snapshot", "-i", "--json"],
   ["click", "@e1"],
   ["screenshot", "/tmp/result.png"]
-]' | agent-browser batch --json
+]
 ```
 
 ## Sessions
@@ -202,3 +222,5 @@ When a user asks for something that requires a real browser, use this skill dire
 7. `agent-browser close` when done — don't leave browser sessions open
 
 Use `--json` flag on all commands for clean machine-readable output. Prefer `snapshot -i` (interactive only) over full snapshot to keep output size manageable. Always close the browser at the end of the task.
+
+When using `exec`, keep each browser step as its own direct `agent-browser ...` command. Never add shell chaining, pipes, redirections, or wrapper shells just to prettify output.
