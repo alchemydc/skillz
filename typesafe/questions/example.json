@@ -1,0 +1,35 @@
+{
+  "is_urgent": {
+    "type": "noul",
+    "instructions": "Does this message convey genuine urgency?",
+    "criteria": {
+      "true": "Explicitly time-sensitive, or describes something actively broken.",
+      "false": "No urgency expressed; informational or routine."
+    }
+  },
+  "needs_human": {
+    "type": "noul",
+    "instructions": "Does this message require a person to decide something, rather than an automated answer?"
+  },
+  "topic": {
+    "type": "choice",
+    "instructions": "What is the main subject of this message?",
+    "criteria": {
+      "infrastructure": "Servers, networking, deployments, outages, home lab.",
+      "finance": "Money, invoices, accounts, investments, billing.",
+      "travel": "Flights, itineraries, bookings, logistics.",
+      "personal": "Family, friends, health, social plans.",
+      "other": "None of the above."
+    }
+  },
+  "frustration": {
+    "type": "score",
+    "instructions": "How frustrated does the sender appear?",
+    "criteria": [
+      "Calm and neutral.",
+      "Concerned but civil.",
+      "Clearly annoyed.",
+      "Very angry or using strong language."
+    ]
+  }
+}
