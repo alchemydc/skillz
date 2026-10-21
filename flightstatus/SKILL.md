@@ -5,7 +5,9 @@ description: >-
   query departures/arrivals using FlightAware AeroAPI (primary) with
   AviationStack as fallback. Use when a user asks about flight status, delays,
   gate/terminal info, departures/arrivals at an airport, route info, or
-  anything related to commercial aviation flight tracking. Requires
+  anything related to commercial aviation flight tracking. Can also return a
+  flight's filed route as a fltplango-ready string (e.g. "route for UA667 for
+  fltplango"). Requires
   FLIGHTAWARE_API_KEY env var (preferred) or AVIATIONSTACK_API_KEY (fallback).
 homepage: https://www.flightaware.com/aeroapi/portal/documentation
 metadata:
@@ -56,6 +58,7 @@ Check airport info and delays:
 | `departures <CODE>` | Upcoming departures from airport | `departures LAX` |
 | `arrivals <CODE>` | Upcoming arrivals at airport | `arrivals ORD` |
 | `route <ORIG> <DEST>` | Flights between two airports | `route JFK LAX` |
+| `fltplan <IDENT>` | Filed route as a fltplango-ready string, one block per leg on the date | `fltplan UA667`, `fltplan UA667 --date 2026-10-23 --from MCO` |
 
 ### Flags
 
@@ -63,6 +66,9 @@ Check airport info and delays:
 |---|---|
 | `--raw` | Output raw JSON response from the API |
 | `--fallback` | Force use of AviationStack (skip FlightAware) |
+| `--date YYYY-MM-DD` | `fltplan` only: local departure date (default: today) |
+| `--from <CODE>` | `fltplan` only: only legs departing this airport (IATA or ICAO) |
+| `--to <CODE>` | `fltplan` only: only legs arriving at this airport (IATA or ICAO) |
 
 ### Flight Ident Formats
 
@@ -118,6 +124,32 @@ Output:
 ### Look up flights on a route
 ```bash
 /home/dc/.openclaw/workspace/skills/flightstatus/scripts/flight_status.sh route JFK LAX
+```
+
+### Get a flight's filed route for fltplango
+```bash
+/home/dc/.openclaw/workspace/skills/flightstatus/scripts/flight_status.sh fltplan UA667
+```
+
+Output:
+```
+✈️  UA667 KMCO → KDEN  dep 2026-10-21 15:30 EDT  [En Route / On Time]
+kmco RDSOX1.JFRYS PATOY Q116 MICES Q116 JAWJA CABLO KT15M KM27I KK42C KIISS.CLASH5 kden
+```
+
+Relay each route line verbatim, on its own line, so it can be copied straight into fltplango.
+
+If the flight plan has not been filed yet, the script says so and shows the last route filed for the same city pair:
+```bash
+/home/dc/.openclaw/workspace/skills/flightstatus/scripts/flight_status.sh fltplan UA667 --date 2026-10-23 --from MCO
+```
+
+Output:
+```
+✈️  UA667 KMCO → KDEN  dep 2026-10-23 15:30 EDT  [Scheduled]
+Route not filed yet.
+Last filed (2026-10-21):
+kmco RDSOX1.JFRYS PATOY Q116 MICES Q116 JAWJA CABLO KT15M KM27I KK42C KIISS.CLASH5 kden
 ```
 
 ### Get raw JSON (for custom processing)

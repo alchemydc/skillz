@@ -26,10 +26,14 @@ Subcommands:
   departures <CODE>      Recent/upcoming departures from an airport
   arrivals <CODE>        Recent/upcoming arrivals at an airport
   route <ORIG> <DEST>    Flights between two airports (e.g. JFK LAX)
+  fltplan <IDENT>        Filed route as a fltplango-ready string (e.g. UA667)
 
 Flags:
   --raw                  Output raw JSON response
   --fallback             Force use of AviationStack (skip FlightAware)
+  --date YYYY-MM-DD      fltplan: local departure date (default: today)
+  --from <CODE>          fltplan: only legs departing this airport (IATA/ICAO)
+  --to <CODE>            fltplan: only legs arriving at this airport (IATA/ICAO)
 
 Data source:
   Primary:  FlightAware AeroAPI (requires FLIGHTAWARE_API_KEY)
@@ -66,6 +70,9 @@ ident=""
 airport_code=""
 orig_code=""
 dest_code=""
+plan_date=""
+plan_from=""
+plan_to=""
 
 # Parse subcommand args
 case "$cmd" in
@@ -90,6 +97,10 @@ case "$cmd" in
     orig_code="$1"; shift
     dest_code="$1"; shift
     ;;
+  fltplan)
+    [[ $# -lt 1 ]] && usage
+    ident="$1"; shift
+    ;;
   -h|--help)
     usage
     ;;
@@ -104,6 +115,9 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --raw)       raw=1; shift ;;
     --fallback)  force_fallback=1; shift ;;
+    --date)      [[ $# -lt 2 ]] && usage; plan_date="$2"; shift 2 ;;
+    --from)      [[ $# -lt 2 ]] && usage; plan_from="$2"; shift 2 ;;
+    --to)        [[ $# -lt 2 ]] && usage; plan_to="$2"; shift 2 ;;
     *)           echo "Unknown flag: $1" >&2; usage ;;
   esac
 done
@@ -583,6 +597,136 @@ fa_route() {
 }
 
 ###############################################################################
+# Convert a filed route to fltplango format
+#
+# Usage: to_fltplango <orig_icao> <dest_icao> <route>
+# Joins a leading SID and a trailing STAR to their neighbouring fix with a dot
+# (procedure names look like RDSOX1 / CLASH5: 3+ letters, a digit, optional
+# letter), and wraps the route in lowercase origin/destination ICAO codes.
+###############################################################################
+to_fltplango() {
+  local orig="$1" dest="$2" route="$3"
+  local -a tok=()
+  read -r -a tok <<< "$route" || true
+  local n=${#tok[@]}
+  local re='^[A-Z]{3,}[0-9][A-Z]?$'
+
+  local sid_join=0 star_join=0
+  if [[ $n -ge 2 ]]; then
+    [[ "${tok[0]}" =~ $re ]] && sid_join=1
+    [[ "${tok[$((n-1))]}" =~ $re ]] && star_join=1
+  fi
+  # Two tokens, both procedures: join once only
+  if [[ $n -eq 2 && $sid_join -eq 1 ]]; then star_join=0; fi
+
+  local out="${orig,,}" i sep
+  for (( i = 0; i < n; i++ )); do
+    sep=" "
+    if [[ $i -eq 1 && $sid_join -eq 1 ]]; then sep="."; fi
+    if [[ $i -eq $((n-1)) && $star_join -eq 1 ]]; then sep="."; fi
+    if [[ $i -eq 0 ]]; then sep=" "; fi
+    out="${out}${sep}${tok[$i]}"
+  done
+  echo "${out} ${dest,,}"
+}
+
+###############################################################################
+# FlightAware: filed route(s) for a flight, formatted for fltplango
+###############################################################################
+fa_fltplan() {
+  local ident="$1"
+  local icao_ident
+  icao_ident=$(iata_to_icao_ident "$ident")
+
+  local response
+  response=$(fa_curl "/flights/${icao_ident}?ident_type=designator&max_pages=1")
+
+  local err
+  err=$(echo "$response" | jq -r '.title // .error // empty' 2>/dev/null)
+  if [[ -n "$err" ]]; then
+    echo "FlightAware API error: $err" >&2
+    return 1
+  fi
+
+  local count
+  count=$(echo "$response" | jq '.flights | if type == "array" then length else 0 end' 2>/dev/null)
+  if [[ "${count:-0}" -eq 0 ]]; then
+    echo "No flights found for '$ident' via FlightAware." >&2
+    return 1
+  fi
+
+  if [[ "$raw" -eq 1 ]]; then
+    echo "$response"
+    return 0
+  fi
+
+  local target_date="${plan_date:-$(date +%F)}"
+  local from_lc="${plan_from,,}" to_lc="${plan_to,,}"
+
+  # API returns newest first; process in ascending departure order
+  local -a legs=()
+  mapfile -t legs < <(echo "$response" | jq -c '[.flights[] | select(.scheduled_out != null)] | sort_by(.scheduled_out) | .[]')
+
+  local matched=0 leg
+  for leg in "${legs[@]}"; do
+    local sched_out o_tz o_iata o_icao d_iata d_icao
+    sched_out=$(echo "$leg" | jq -r '.scheduled_out')
+    o_tz=$(echo "$leg"   | jq -r '.origin.timezone // "UTC"')
+    o_iata=$(echo "$leg" | jq -r '.origin.code_iata // empty')
+    o_icao=$(echo "$leg" | jq -r '.origin.code_icao // empty')
+    d_iata=$(echo "$leg" | jq -r '.destination.code_iata // empty')
+    d_icao=$(echo "$leg" | jq -r '.destination.code_icao // empty')
+
+    local leg_date
+    leg_date=$(TZ="$o_tz" date -d "$sched_out" +%F 2>/dev/null) || continue
+    [[ "$leg_date" == "$target_date" ]] || continue
+
+    if [[ -n "$from_lc" && "${o_iata,,}" != "$from_lc" && "${o_icao,,}" != "$from_lc" ]]; then
+      continue
+    fi
+    if [[ -n "$to_lc" && "${d_iata,,}" != "$to_lc" && "${d_icao,,}" != "$to_lc" ]]; then
+      continue
+    fi
+
+    local fl_ident status route dep_fmt
+    fl_ident=$(echo "$leg" | jq -r '.ident_iata // .ident // "?"')
+    status=$(echo "$leg"   | jq -r '.status // "?"')
+    route=$(echo "$leg"    | jq -r '.route // empty')
+    dep_fmt=$(fmt_time "$sched_out" "$o_tz")
+
+    [[ $matched -gt 0 ]] && echo ""
+    matched=$((matched + 1))
+
+    printf '✈️  %s %s → %s  dep %s  [%s]\n' "$fl_ident" "${o_icao:-?}" "${d_icao:-?}" "$dep_fmt" "$status"
+
+    if [[ -n "$route" ]]; then
+      to_fltplango "$o_icao" "$d_icao" "$route"
+      continue
+    fi
+
+    echo "Route not filed yet."
+    local prev prev_route prev_out prev_tz prev_date
+    prev=$(echo "$response" | jq -c --arg so "$sched_out" --arg o "$o_icao" --arg d "$d_icao" \
+      '[.flights[] | select((.route // "") != "" and .scheduled_out != null and .scheduled_out < $so and .origin.code_icao == $o and .destination.code_icao == $d)] | sort_by(.scheduled_out) | last // empty')
+    if [[ -n "$prev" ]]; then
+      prev_route=$(echo "$prev" | jq -r '.route')
+      prev_out=$(echo "$prev"   | jq -r '.scheduled_out')
+      prev_tz=$(echo "$prev"    | jq -r '.origin.timezone // "UTC"')
+      prev_date=$(TZ="$prev_tz" date -d "$prev_out" +%F 2>/dev/null) || prev_date="?"
+      echo "Last filed (${prev_date}):"
+      to_fltplango "$o_icao" "$d_icao" "$prev_route"
+    else
+      echo "No previously filed route found."
+    fi
+  done
+
+  if [[ $matched -eq 0 ]]; then
+    echo "No legs found for '$ident' on ${target_date}${plan_from:+ from $plan_from}${plan_to:+ to $plan_to}." >&2
+    return 1
+  fi
+}
+
+###############################################################################
 # AviationStack fallback: flight status
 ###############################################################################
 as_flight() {
@@ -707,5 +851,8 @@ case "$cmd" in
     ;;
   route)
     try_fa_then_fallback fa_route "" "$orig_code" "$dest_code"
+    ;;
+  fltplan)
+    try_fa_then_fallback fa_fltplan "" "$ident"
     ;;
 esac

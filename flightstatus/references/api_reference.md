@@ -35,6 +35,8 @@ Flight info status summary. Returns ~14 days of recent and scheduled flights.
 - `scheduled_in`, `estimated_in`, `actual_in` — gate arrival times
 - `gate_origin`, `gate_destination`, `terminal_origin`, `terminal_destination`
 - `baggage_claim`
+- `route` — filed route string (e.g. `RDSOX1 JFRYS PATOY Q116 ...`); `null` until the flight plan is filed
+- `filed_altitude`, `filed_airspeed`, `route_distance`
 - `cancelled` (bool), `diverted` (bool)
 - `status` — human-readable status string
 - `origin` / `destination` — objects with `code`, `code_icao`, `code_iata`, `name`, `city`, `timezone`
